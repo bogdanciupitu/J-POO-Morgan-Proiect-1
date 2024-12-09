@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.poo.checker.Checker;
 import org.poo.checker.CheckerConstants;
+import org.poo.classes.Bank;
 import org.poo.fileio.ObjectInput;
 
 import java.io.File;
@@ -71,9 +72,10 @@ public final class Main {
         ObjectMapper objectMapper = new ObjectMapper();
         File file = new File(CheckerConstants.TESTS_PATH + filePath1);
         ObjectInput inputData = objectMapper.readValue(file, ObjectInput.class);
-
         ArrayNode output = objectMapper.createArrayNode();
 
+        Bank bank = new Bank(inputData.getUsers(), inputData.getExchangeRates());
+        bank.processTransactions(inputData.getCommands(), output);
         /*
          * TODO Implement your function here
          *
@@ -104,9 +106,8 @@ public final class Main {
      * @return the extracted numbers
      */
     public static int fileConsumer(final File file) {
-        return Integer.parseInt(
-                file.getName()
-                        .replaceAll(CheckerConstants.DIGIT_REGEX, CheckerConstants.EMPTY_STR)
-        );
+        String fileName = file.getName()
+                .replaceAll(CheckerConstants.DIGIT_REGEX, CheckerConstants.EMPTY_STR);
+        return Integer.parseInt(fileName.substring(0, 2));
     }
 }
