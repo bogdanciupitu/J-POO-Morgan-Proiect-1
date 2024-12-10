@@ -74,7 +74,8 @@ public final class Main {
         ObjectInput inputData = objectMapper.readValue(file, ObjectInput.class);
         ArrayNode output = objectMapper.createArrayNode();
 
-        Bank bank = new Bank(inputData.getUsers(), inputData.getExchangeRates());
+        Bank bank = Bank.getInstance();
+        bank.initialize(inputData.getUsers(), inputData.getExchangeRates());
         bank.processTransactions(inputData.getCommands(), output);
         /*
          * TODO Implement your function here

@@ -11,15 +11,30 @@ import org.poo.fileio.UserInput;
 import org.poo.utils.Utils;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 @Getter
 @Setter
-public class Bank {
+public final class Bank {
     private ArrayList<User> users;
     private ArrayList<Exchange> exchanges;
 
-    public Bank(final UserInput[] inputUsers, final ExchangeInput[] inputExchanges) {
+    private static Bank instance;
+
+    private Bank() {
+        this.users = new ArrayList<>();
+        this.exchanges = new ArrayList<>();
+    }
+
+    public static Bank getInstance() {
+        if (instance == null) {
+            instance = new Bank();
+        }
+        return instance;
+    }
+
+    public void initialize(final UserInput[] inputUsers, final ExchangeInput[] inputExchanges) {
         this.users = new ArrayList<>();
         for (UserInput inputUser : inputUsers) {
             this.users.add(new User(inputUser.getFirstName(), inputUser.getLastName(),
@@ -28,6 +43,7 @@ public class Bank {
 
         this.exchanges = new ArrayList<Exchange>();
         for (ExchangeInput inputExchange : inputExchanges) {
+            this.exchanges.add(new Exchange(inputExchange));
             this.exchanges.add(new Exchange(inputExchange));
         }
     }
@@ -107,18 +123,10 @@ public class Bank {
         User user = findUser(email);
         if (user != null) {
             String iban = Utils.generateIBAN();
-            Account account = null;
-            if (accountType.equals("classic")) {
-                account = new ClassicAccount(currency, accountType, timestamp, 0, iban,
-                        new ArrayList<>());
-            } else if (accountType.equals("savings")) {
-                account = new SavingsAccount(currency, accountType, timestamp, 0, iban,
-                        interestRate, new ArrayList<>());
-            }
 
-            // DACA E SA FOLOSESC FACTORY
-//            Account account = AccountFactory.createAccount(currency, accountType, timestamp, iban,
-//                    interestRate);
+            // factory pattern
+            Account account = AccountFactory.createAccount(currency, accountType, timestamp, iban,
+                    interestRate);
             user.getAccounts().add(account);
 
             Transaction transaction = new Transaction(timestamp, "New account created", iban, iban,
@@ -205,6 +213,7 @@ public class Bank {
             userNode.set("accounts", accounts);
             usersArray.add(userNode);
         }
+
         ObjectNode result = mapper.createObjectNode();
         result.put("command", command.getCommand());
         result.set("output", usersArray);
@@ -322,14 +331,20 @@ public class Bank {
                     for (Card card : account.getCards()) {
                         if (card.getCardNumber().equals(cardNumber)) {
                             found = true;
-                            double convertedAmount = convertCurrency(amount, currency,
-                                    account.getCurrency());
+                            double conversionRate = convert(currency, account.getCurrency());
+                            double convertedAmount = amount * conversionRate;
+//                            double convertedAmount = convertCurrency(amount, currency,
+//                                    account.getCurrency());
                             if (account.getBalance() >= amount) {
-                                account.setBalance(account.getBalance() - amount);
+                                account.setBalance(account.getBalance() - convertedAmount);
                                 Transaction transaction = new Transaction(timestamp,
                                         "Card payment", account.getIban(), commerciant, amount,
                                         "online");
                                 account.getTransactions().add(transaction);
+                                if (card instanceof OneTimeCard) {
+                                    account.getCards().remove(card);
+                                    account.getCards().add(new Card(cardNumber, "active"));
+                                }
                                 for (Exchange exchange : exchanges) {
                                     if (exchange.getFrom().equals(currency)) {
                                         exchange.getTransactions().add(transaction);
@@ -346,6 +361,7 @@ public class Bank {
                 }
             }
         }
+
         if (!found) {
             ObjectMapper mapper = new ObjectMapper();
             ObjectNode result = mapper.createObjectNode();
@@ -472,11 +488,10 @@ public class Bank {
                             transactionNode.put("amount", transaction.getAmount());
                             transactionNode.put("currency", account.getCurrency());
                             double totalAmount = transaction.getAmount() * account.getTransactions().size();
-                            transactionNode.put("description", transaction.getDescription()
-                                    + totalAmount + " " + account.getCurrency());
+                            transactionNode.put("description", transaction.getDescription());
                             ArrayNode involvedAccounts = mapper.createArrayNode();
-                            for (Account acc : user.getAccounts()) {
-                                involvedAccounts.add(acc.getIban());
+                            for (String involvedAccount : transaction.getInvolvedAccounts()) {
+                                involvedAccounts.add(involvedAccount);
                             }
                             transactionNode.set("involvedAccounts", involvedAccounts);
                             transactionNode.put("timestamp", transaction.getTimestamp());
@@ -520,8 +535,8 @@ public class Bank {
                             } else if (balanceDifference <= 30) {
                                 card.setStatus("warning");
                                 Transaction transaction = new Transaction(timestamp,
-                                        "You have reached the minimum amount of funds," +
-                                                " the card will be frozen", account.getIban(),
+                                        "You have reached the minimum amount of funds,"
+                                                + " the card will be frozen", account.getIban(),
                                         account.getIban(), 0, "statusChange");
                             } else {
                                 card.setStatus("active");
@@ -531,6 +546,7 @@ public class Bank {
                 }
             }
         }
+
         if (!found) {
             ObjectMapper mapper = new ObjectMapper();
             ObjectNode result = mapper.createObjectNode();
@@ -588,12 +604,15 @@ public class Bank {
                 if (canSplit) {
                     double convertedAmount = convertCurrency(splitAmount, currency, account.getCurrency());
                     account.setBalance(account.getBalance() - convertedAmount);
-                    Transaction transaction = new Transaction(timestamp, "Split payment of ",
+                    String description = String.format("Split payment of %.2f %s", amount, currency);
+                    Transaction transaction = new Transaction(timestamp, description,
                             account.getIban(), account.getIban(), splitAmount, "split");
+                    transaction.setInvolvedAccounts(accountsForSplit);
                     account.getTransactions().add(transaction);
                 } else {
                     Transaction transaction = new Transaction(timestamp, "Insufficient funds",
                             account.getIban(), account.getIban(), splitAmount, "splitFailed");
+                    transaction.setInvolvedAccounts(accountsForSplit);
                     account.getTransactions().add(transaction);
                 }
             }
@@ -608,7 +627,49 @@ public class Bank {
                 }
             }
         }
+
         return null;
+    }
+
+    public double convert(String from, String to) {
+        for (Exchange exchange : exchanges) {
+            if (exchange.getFrom().equals(from) && exchange.getTo().equals(to)) {
+                return exchange.getRate();
+            }
+            if (exchange.getFrom().equals(to) && exchange.getTo().equals(from)) {
+                return 1 / exchange.getRate();
+            }
+        }
+
+        for (Exchange intermediate : exchanges) {
+            if (intermediate.getFrom().equals(from)) {
+                String next = intermediate.getTo();
+
+                for (Exchange exchange : exchanges) {
+                    if (exchange.getFrom().equals(next) && exchange.getTo().equals(to)) {
+                        return exchange.getRate() * intermediate.getRate();
+                    }
+                    if (exchange.getFrom().equals(to) && exchange.getTo().equals(next)) {
+                        return exchange.getRate() / intermediate.getRate();
+                    }
+                }
+            }
+
+            if (intermediate.getTo().equals(from)) {
+                String next = intermediate.getFrom();
+
+                for (Exchange exchange : exchanges) {
+                    if (exchange.getFrom().equals(next) && exchange.getTo().equals(to)) {
+                        return (1 / intermediate.getRate()) * exchange.getRate();
+                    }
+                    if (exchange.getFrom().equals(to) && exchange.getTo().equals(next)) {
+                        return (1 / intermediate.getRate()) / exchange.getRate();
+                    }
+                }
+            }
+        }
+
+        return -1;
     }
 
     private double convertCurrency(final double amount, final String from, final String to) {
@@ -621,6 +682,17 @@ public class Bank {
                 return amount * exchange.getRate();
             }
         }
+
+        for (Exchange exchange1 : exchanges) {
+            if (exchange1.getFrom().equals(from)) {
+                for (Exchange exchange2 : exchanges) {
+                    if (exchange2.getFrom().equals(exchange1.getTo()) && exchange2.getTo().equals(to)) {
+                        return amount * exchange1.getRate() / exchange2.getRate();
+                    }
+                }
+            }
+        }
+
         return amount;
     }
 
@@ -641,12 +713,19 @@ public class Bank {
             for (Transaction transaction : accountIBAN.getTransactions()) {
                 if (transaction.getTimestamp() >= startTimestamp
                         && transaction.getTimestamp() <= endTimestamp) {
-                    // logica
+                    ObjectNode transactionNode = mapper.createObjectNode();
+                    transactionNode.put("description", transaction.getDescription());
+                    transactionNode.put("timestamp", transaction.getTimestamp());
+                    transactions.add(transactionNode);
                 }
             }
 
             report.set("transactions", transactions);
-            output.add(report);
+            ObjectNode result = mapper.createObjectNode();
+            result.put("command", command.getCommand());
+            result.set("output", report);
+            result.put("timestamp", command.getTimestamp());
+            output.add(result);
         }
     }
 
@@ -663,8 +742,44 @@ public class Bank {
             report.put("balance", accountIBAN.getBalance());
             report.put("currency", accountIBAN.getCurrency());
 
-//            ObjectNode spendings = mapper.createObjectNode();
-//            for (Commerciants category)
+            ObjectNode spendings = mapper.createObjectNode();
+            ArrayNode transactionsArray = mapper.createArrayNode();
+
+            for (Transaction transaction : accountIBAN.getTransactions()) {
+                if (transaction.getTimestamp() >= startTimestamp && transaction.getTimestamp() <= endTimestamp) {
+                    String commerciant = transaction.getReceiverIBAN();
+                    double amount = transaction.getAmount();
+                    if (spendings.has(commerciant)) {
+                        spendings.put(commerciant, spendings.get(commerciant).asDouble() + amount);
+                    } else {
+                        spendings.put(commerciant, amount);
+                    }
+
+                    ObjectNode transactionNode = mapper.createObjectNode();
+                    transactionNode.put("amount", amount);
+                    transactionNode.put("commerciant", commerciant);
+                    transactionNode.put("description", transaction.getDescription());
+                    transactionNode.put("timestamp", transaction.getTimestamp());
+                    transactionsArray.add(transactionNode);
+                }
+            }
+
+            ArrayNode commerciantsArray = mapper.createArrayNode();
+            for (Iterator<String> it = spendings.fieldNames(); it.hasNext(); ) {
+                String commerciant = it.next();
+                ObjectNode commerciantNode = mapper.createObjectNode();
+                commerciantNode.put("commerciant", commerciant);
+                commerciantNode.put("amount", spendings.get(commerciant).asDouble());
+                commerciantsArray.add(commerciantNode);
+            }
+
+            report.set("commerciant", commerciantsArray);
+            report.set("transactions", transactionsArray);
+            ObjectNode result = mapper.createObjectNode();
+            result.put("command", command.getCommand());
+            result.set("output", report);
+            result.put("timestamp", command.getTimestamp());
+            output.add(result);
         }
     }
 
@@ -678,8 +793,8 @@ public class Bank {
                 double interestRate = savingsAccount.getBalance() * savingsAccount.getInterestRate();
                 savingsAccount.setBalance(savingsAccount.getBalance() + interestRate);
 
-                Transaction transaction = new Transaction(timestamp, "Interest added", accountIBAN.getIban(),
-                        accountIBAN.getIban(), interestRate, "addInterest");
+                Transaction transaction = new Transaction(timestamp, "Interest added",
+                        accountIBAN.getIban(), accountIBAN.getIban(), interestRate, "addInterest");
                 savingsAccount.getTransactions().add(transaction);
             }
         }

@@ -3,6 +3,8 @@ package org.poo.classes;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter
 @Setter
 public class Transaction {
@@ -12,6 +14,7 @@ public class Transaction {
     private String receiverIBAN;
     private double amount;
     private String transferType;
+    private List<String> involvedAccounts;
 
     public Transaction(final int timestamp, final String description, final String senderIBAN,
                        final String receiverIBAN, final double amount, final String transferType) {
