@@ -15,6 +15,8 @@ public class Transaction {
     private double amount;
     private String transferType;
     private List<String> involvedAccounts;
+    private String currency;
+    private String error;
 
     public Transaction(final int timestamp, final String description, final String senderIBAN,
                        final String receiverIBAN, final double amount, final String transferType) {
