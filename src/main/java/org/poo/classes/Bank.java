@@ -59,7 +59,6 @@ public final class Bank {
         this.exchanges = new ArrayList<Exchange>();
         for (ExchangeInput inputExchange : inputExchanges) {
             this.exchanges.add(new Exchange(inputExchange));
-//            this.exchanges.add(new Exchange(inputExchange));
         }
     }
 
@@ -77,10 +76,7 @@ public final class Bank {
                 case "addAccount":
                     addAccount(command);
                     break;
-                case "createCard":
-                    createCard(command);
-                    break;
-                case "createOneTimeCard":
+                case "createCard", "createOneTimeCard":
                     createCard(command);
                     break;
                 case "printUsers":
@@ -145,7 +141,6 @@ public final class Bank {
         if (user != null) {
             String iban = Utils.generateIBAN();
 
-            // factory pattern
             Account account = AccountFactory.createAccount(currency, accountType, timestamp, iban,
                     interestRate);
             user.getAccounts().add(account);
@@ -176,9 +171,11 @@ public final class Bank {
                 }
                 userAccount.getCards().add(card);
 
-                Transaction transaction = new Transaction(timestamp, "New card created", account,
-                        card.getCardNumber(), 0, "card");
-                userAccount.getTransactions().add(transaction);
+                if (card != null) {
+                    Transaction transaction = new Transaction(timestamp, "New card created",
+                            account, card.getCardNumber(), 0, "card");
+                    userAccount.getTransactions().add(transaction);
+                }
             }
         }
     }
@@ -189,6 +186,7 @@ public final class Bank {
                 return user;
             }
         }
+
         return null;
     }
 
@@ -200,6 +198,7 @@ public final class Bank {
                 }
             }
         }
+
         return null;
     }
 
@@ -209,6 +208,7 @@ public final class Bank {
                 return userAccount;
             }
         }
+
         return null;
     }
 
@@ -398,15 +398,22 @@ public final class Bank {
                                     new HashSet<>());
                             double convertedAmount = amount * conversionRate;
 
-//                            double remainingAmount = account.getBalance() - convertedAmount;
-//                            if (remainingAmount < account.getMinBalance()) {
-//                                Transaction transaction = new Transaction(timestamp,
-//                                        "The card is frozen", account.getIban(), commerciant,
-//                                        amount, "onlineFailed");
-//                                account.getTransactions().add(transaction);
-//                                card.setStatus("frozen");
-//                                return;
-//                            }
+                            double remainingAmount = account.getBalance() - convertedAmount;
+                            if (account.getBalance() < convertedAmount) {
+                                Transaction transaction = new Transaction(timestamp,
+                                        "Insufficient funds", account.getIban(), commerciant,
+                                        amount, "onlineFailed");
+                                account.getTransactions().add(transaction);
+                                return;
+                            }
+                            if (remainingAmount < account.getMinBalance()) {
+                                Transaction transaction = new Transaction(timestamp,
+                                        "The card is frozen", account.getIban(), commerciant,
+                                        amount, "onlineFailed");
+                                account.getTransactions().add(transaction);
+                                card.setStatus("frozen");
+                                return;
+                            }
 
                             if (account.getBalance() >= convertedAmount) {
                                 account.setBalance(account.getBalance() - convertedAmount);
@@ -433,11 +440,6 @@ public final class Bank {
                                         exchange.getTransactions().add(transaction);
                                     }
                                 }
-                            } else {
-                                Transaction transaction = new Transaction(timestamp,
-                                        "Insufficient funds", account.getIban(), commerciant,
-                                        amount, "onlineFailed");
-                                account.getTransactions().add(transaction);
                             }
 
                             double balanceDifference = account.getBalance()
@@ -491,6 +493,7 @@ public final class Bank {
             if (senderAccount == null) {
                 senderAccount = findAccount(user, account);
             }
+
             if (receiverAccount == null) {
                 for (Alias alias : user.getAliases()) {
                     if (alias.getAlias().equals(receiver)) {
@@ -498,10 +501,12 @@ public final class Bank {
                         break;
                     }
                 }
+
                 if (receiverAccount == null) {
                     receiverAccount = findAccount(user, receiver);
                 }
             }
+
             if (senderAccount != null && receiverAccount != null) {
                 break;
             }
@@ -512,8 +517,10 @@ public final class Bank {
                 double conversionRate = convert(senderAccount.getCurrency(),
                         receiverAccount.getCurrency(), new HashSet<>());
                 double convertedAmount = amount * conversionRate;
+
                 senderAccount.setBalance(senderAccount.getBalance() - amount);
                 receiverAccount.setBalance(receiverAccount.getBalance() + convertedAmount);
+
                 Transaction senderTransaction = new Transaction(timestamp, description,
                         senderAccount.getIban(), receiverAccount.getIban(), amount, "sent");
                 senderAccount.getTransactions().add(senderTransaction);
@@ -521,6 +528,7 @@ public final class Bank {
                         senderAccount.getIban(), receiverAccount.getIban(), convertedAmount,
                         "received");
                 receiverAccount.getTransactions().add(receiverTransaction);
+
                 for (Exchange exchange : exchanges) {
                     if (exchange.getFrom().equals(senderAccount.getCurrency())) {
                         exchange.getTransactions().add(senderTransaction);
@@ -678,12 +686,13 @@ public final class Bank {
                             found = true;
                             double balanceDifference = account.getBalance()
                                     - account.getMinBalance();
+
                             if (balanceDifference < 0) {
-//                                card.setStatus("frozen");
+                                card.setStatus("frozen");
                                 Transaction transaction = new Transaction(timestamp,
                                         "The card is frozen", account.getIban(), account.getIban(),
                                         0, "statusChange");
-//                                account.getTransactions().add(transaction);
+                                account.getTransactions().add(transaction);
                             } else if (balanceDifference <= MIN_BALANCE_WARNING) {
                                 card.setStatus("warning");
                                 Transaction transaction = new Transaction(timestamp,
@@ -691,8 +700,6 @@ public final class Bank {
                                                 + " the card will be frozen", account.getIban(),
                                         account.getIban(), 0, "statusChange");
                                 account.getTransactions().add(transaction);
-                            } else {
-                                card.setStatus("active");
                             }
                         }
                     }
@@ -778,6 +785,7 @@ public final class Bank {
                             new HashSet<>());
                     double convertedAmount = splitAmount * conversionRate;
                     account.setBalance(account.getBalance() - convertedAmount);
+
                     String description = String.format("Split payment of %.2f %s",
                             amount, currency);
                     Transaction transaction = new Transaction(timestamp, description,

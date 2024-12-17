@@ -14,13 +14,6 @@ public class Exchange {
     private double rate;
     private ArrayList<Transaction> transactions;
 
-    public Exchange(final String from, final String to, final double rate) {
-        this.from = from;
-        this.to = to;
-        this.rate = rate;
-        this.transactions = new ArrayList<>();
-    }
-
     public Exchange(final ExchangeInput exchangeInput) {
         this.from = exchangeInput.getFrom();
         this.to = exchangeInput.getTo();

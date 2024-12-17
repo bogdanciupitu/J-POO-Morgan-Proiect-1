@@ -27,5 +27,6 @@ public class Account {
         this.iban = iban;
         this.cards = cards;
         this.transactions = transactions;
+        this.minBalance = 0;
     }
 }
