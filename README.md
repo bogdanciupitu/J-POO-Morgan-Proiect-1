@@ -2,9 +2,10 @@
 
         This  project is a simplified banking system. This system handles users, accounts, cards,
     transactions, card operations like split and more.
-        The design patterns which I used are Singleton for the Bank Class and Factory for the 2 types
-    of accounts.
-    I will add other design patterns in the second stage, like command for the Bank class.
+        The design patterns which I used are Singleton for the Bank Class, Factory for the 2 types
+    of accounts and Command for encapsulating the operations such "addAccount", "createCard",
+    "sendMoney" and so on. The Command pattern is implemented using the Command interface, with
+    all the commands implementing this interface and they are organized in the command package.
 
 ## Classes Description
 
